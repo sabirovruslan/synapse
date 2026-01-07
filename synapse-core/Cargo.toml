@@ -1,0 +1,11 @@
+[package]
+name = "synapse-core"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+serde = { version = "1.0.228", features = ["derive"] }
+moka = { version = "0.12.12", features = ["future"] }
+
+[dev-dependencies]
+tokio = { version = "1.49.0", features = ["macros", "rt", "time"] }
