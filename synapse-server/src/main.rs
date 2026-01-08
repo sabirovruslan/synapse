@@ -1,54 +1,29 @@
-use std::path::Path;
+use crate::server::{grpc::run_grpc, uds::run_uds};
+use synapse_core::L1Cache;
+use tokio_util::sync::CancellationToken;
 
-use bytes::Bytes;
-use futures::{SinkExt, StreamExt};
-use synapse_core::{CacheCommand, CacheResponce, L1Cache};
-use tokio::net::UnixListener;
-use tokio_util::codec::{Framed, LengthDelimitedCodec};
+pub mod server;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let socket_path = "/tmp/synapse.sock";
-
-    if Path::new(socket_path).exists() {
-        std::fs::remove_file(socket_path)?;
-    }
-
-    let listener = UnixListener::bind(socket_path)?;
-
-    println!("🚀 Synapse Server started on UDS: {}", socket_path);
-
     let l1_cache = L1Cache::new(10_000);
+    let shutdown = CancellationToken::new();
+    let uds_handle = run_uds(l1_cache.clone(), shutdown.clone());
+    let grpc_handle = run_grpc(l1_cache.clone(), shutdown.clone());
 
-    loop {
-        let (stream, _) = listener.accept().await?;
-        let l1_cache_clone = l1_cache.clone();
+    let servers = async { tokio::try_join!(uds_handle, grpc_handle) };
+    tokio::pin!(servers);
 
-        tokio::spawn(async move {
-            let mut framed = Framed::new(stream, LengthDelimitedCodec::new());
+    tokio::select! {
+        res = &mut servers => {
+            res?;
+        }
+        _ = tokio::signal::ctrl_c() => {
+            shutdown.cancel();
+        }
+    };
 
-            while let Some(Ok(packet)) = framed.next().await {
-                if let Ok(cmd) = bincode::deserialize::<CacheCommand>(&packet) {
-                    let response = match cmd {
-                        CacheCommand::Get { key } => l1_cache_clone.get(&key).await,
-                        CacheCommand::Set {
-                            key,
-                            value,
-                            ttl_secs,
-                        } => {
-                            l1_cache_clone.set(key, value, ttl_secs).await;
-                            CacheResponce::Ok
-                        }
-                    };
+    servers.await?;
 
-                    let reply = bincode::serialize(&response).unwrap();
-                    let _ = framed.send(Bytes::from(reply)).await;
-                } else {
-                    let response = CacheResponce::Error("Not implemented".into());
-                    let reply = bincode::serialize(&response).unwrap();
-                    let _ = framed.send(Bytes::from(reply)).await;
-                }
-            }
-        });
-    }
+    Ok(())
 }
