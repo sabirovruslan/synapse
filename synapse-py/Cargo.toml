@@ -3,4 +3,17 @@ name = "synapse-py"
 version = "0.1.0"
 edition = "2024"
 
+[lib]
+name = "synapse_py"
+crate-type = ["cdylib"]
+
 [dependencies]
+synapse-core = { path = "../synapse-core" }
+
+pyo3 = { version = "0.27.2", features = ["extension-module"] }
+
+tokio = { version = "1.49.0", features = ["full"] }
+tokio-util = { version = "0.7.18", features = ["codec"] }
+bytes = "1.11.0"
+bincode = "1.3.3"
+futures = "0.3.31"
