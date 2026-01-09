@@ -1,0 +1,23 @@
+services:
+  synapse:
+    build:
+      context: ../../.
+      dockerfile: Dockerfile.synapse
+    volumes:
+      - shared-sockets:/tmp
+    environment:
+      - REDIS_URL=redis://redis:6379
+
+  web:
+    build:
+      context: ../../.
+      dockerfile: examples/fastapi/Dockerfile.app
+    ports:
+      - "8000:8000"
+    volumes:
+      - shared-sockets:/tmp
+    depends_on:
+      - synapse
+
+volumes:
+  shared-sockets:

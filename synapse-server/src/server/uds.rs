@@ -1,4 +1,9 @@
-use std::{error::Error, fs::remove_file, path::Path};
+use std::{
+    env,
+    error::Error,
+    fs::{create_dir_all, remove_file},
+    path::Path,
+};
 
 use bytes::Bytes;
 use futures::{SinkExt, StreamExt};
@@ -10,12 +15,16 @@ use tokio_util::{
 };
 
 pub async fn run_uds(l1_cache: L1Cache, shutdown: CancellationToken) -> Result<(), Box<dyn Error>> {
-    let socket_path = "/tmp/synapse.sock";
-    if Path::new(socket_path).exists() {
-        remove_file(socket_path)?;
+    let socket_path =
+        env::var("SYNAPSE_SOCKET_PATH").unwrap_or_else(|_| "/tmp/synapse.sock".to_string());
+    if let Some(parent) = Path::new(&socket_path).parent() {
+        create_dir_all(parent)?;
+    }
+    if Path::new(&socket_path).exists() {
+        remove_file(&socket_path)?;
     }
 
-    let listener = UnixListener::bind(socket_path)?;
+    let listener = UnixListener::bind(&socket_path)?;
 
     println!("Synapse Server started on UDS: {}", socket_path);
 
