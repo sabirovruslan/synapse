@@ -18,7 +18,7 @@ use tokio_util::{
     sync::CancellationToken,
 };
 
-fn decode_command(mut buf: &[u8]) -> Result<CacheCommand, String> {
+pub fn decode_command(mut buf: &[u8]) -> Result<CacheCommand, String> {
     if !buf.has_remaining() {
         return Err("Buf is empty".into());
     }
@@ -55,7 +55,7 @@ fn decode_command(mut buf: &[u8]) -> Result<CacheCommand, String> {
     }
 }
 
-fn encode_response(response: CacheResponce) -> Bytes {
+pub fn encode_response(response: CacheResponce) -> Bytes {
     let mut out = BytesMut::new();
     match response {
         CacheResponce::Ok => out.put_u8(RES_OK),
