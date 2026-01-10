@@ -3,10 +3,18 @@ services:
     build:
       context: ../../.
       dockerfile: Dockerfile.synapse
+    healthcheck:
+      test: ["CMD", "test", "-S", "/tmp/synapse.sock"]
+      interval: 2s
+      timeout: 1s
+      retries: 5
+    networks:
+      - local_net
     volumes:
       - shared-sockets:/tmp
     environment:
       - REDIS_URL=redis://redis:6379
+      - BIG_JSON_PATH=/app/big_payload.json
 
   web:
     build:
@@ -14,10 +22,28 @@ services:
       dockerfile: examples/fastapi/Dockerfile.app
     ports:
       - "8000:8000"
+    networks:
+      - local_net
+      - remote_net
     volumes:
       - shared-sockets:/tmp
+      - ./main.py:/app/main.py
+      - ./big_payload.json:/app/big_payload.json:ro
+    environment:
+      - REDIS_URL=redis://redis:6379
     depends_on:
       - synapse
 
+  redis:
+    image: redis:7-alpine
+    networks:
+      - remote_net
+
 volumes:
   shared-sockets:
+
+networks:
+  local_net:
+    driver: bridge
+  remote_net:
+    driver: bridge

@@ -7,7 +7,7 @@ use std::{
 
 use bytes::Bytes;
 use futures::{SinkExt, StreamExt};
-use synapse_core::{CacheCommand, CacheResponce, L1Cache};
+use synapse_core::{CacheCommand, CacheResponce, L1Cache, MAX_FRAME_LENGTH};
 use tokio::net::UnixListener;
 use tokio_util::{
     codec::{Framed, LengthDelimitedCodec},
@@ -39,7 +39,12 @@ pub async fn run_uds(l1_cache: L1Cache, shutdown: CancellationToken) -> Result<(
                 let l1_cache_clone = l1_cache.clone();
 
                 tokio::spawn(async move {
-                    let mut framed = Framed::new(stream, LengthDelimitedCodec::new());
+                    let mut framed = Framed::new(
+                        stream,
+                        LengthDelimitedCodec::builder()
+                            .max_frame_length(MAX_FRAME_LENGTH)
+                            .new_codec(),
+                    );
 
                     while let Some(Ok(packet)) = framed.next().await {
                         if let Ok(cmd) = bincode::deserialize::<CacheCommand>(&packet) {

@@ -4,6 +4,8 @@ use moka::Expiry;
 use moka::future::Cache;
 use serde::{Deserialize, Serialize};
 
+pub const MAX_FRAME_LENGTH: usize = 64 * 1024 * 1024;
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum CacheCommand {
     Get {
