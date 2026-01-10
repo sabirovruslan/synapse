@@ -26,6 +26,21 @@ fn bench_l1cache_get_hit(c: &mut Criterion) {
     });
 }
 
+fn bench_l1cache_get_miss(c: &mut Criterion) {
+    let rt = Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("create runtime");
+    let cache = L1Cache::new(1024);
+
+    c.bench_function("l1cache_get_miss", |b| {
+        b.to_async(&rt).iter(|| async {
+            let res = cache.get(black_box("bench_key")).await;
+            black_box(res);
+        });
+    });
+}
+
 fn bench_l1cache_set(c: &mut Criterion) {
     let rt = Builder::new_current_thread()
         .enable_all()
@@ -44,5 +59,10 @@ fn bench_l1cache_set(c: &mut Criterion) {
     });
 }
 
-criterion_group!(benches, bench_l1cache_get_hit, bench_l1cache_set);
+criterion_group!(
+    benches,
+    bench_l1cache_get_hit,
+    bench_l1cache_get_miss,
+    bench_l1cache_set
+);
 criterion_main!(benches);
