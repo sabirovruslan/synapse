@@ -6,6 +6,14 @@ use serde::{Deserialize, Serialize};
 
 pub const MAX_FRAME_LENGTH: usize = 64 * 1024 * 1024;
 
+pub const OP_GET: u8 = 1;
+pub const OP_SET: u8 = 2;
+
+pub const RES_OK: u8 = 0;
+pub const RES_HIT: u8 = 1;
+pub const RES_MISS: u8 = 2;
+pub const RES_ERR: u8 = 3;
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum CacheCommand {
     Get {
