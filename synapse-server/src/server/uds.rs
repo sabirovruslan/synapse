@@ -132,3 +132,159 @@ pub async fn run_uds(l1_cache: L1Cache, shutdown: CancellationToken) -> Result<(
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{decode_command, encode_response};
+    use bytes::{BufMut, BytesMut};
+    use synapse_core::{
+        CacheCommand, CacheResponce, OP_GET, OP_SET, RES_ERR, RES_HIT, RES_MISS, RES_OK,
+    };
+
+    #[test]
+    fn decode_command_get_ok() {
+        let key = "alpha";
+        let mut buf = BytesMut::new();
+        buf.put_u8(OP_GET);
+        buf.put_u32_le(key.len() as u32);
+        buf.extend_from_slice(key.as_bytes());
+
+        let cmd = decode_command(&buf).expect("decode get");
+        assert!(matches!(cmd, CacheCommand::Get { key: k } if k == key));
+    }
+
+    #[test]
+    fn decode_command_get_ok_wit_utf_8() {
+        let key = "@alpha#1!&";
+        let mut buf = BytesMut::new();
+        buf.put_u8(OP_GET);
+        buf.put_u32_le(key.len() as u32);
+        buf.extend_from_slice(key.as_bytes());
+
+        let cmd = decode_command(&buf).expect("decode get");
+        assert!(matches!(cmd, CacheCommand::Get { key: k } if k == key));
+    }
+
+    #[test]
+    fn decode_command_set_ok_without_ttl() {
+        let key = "k1";
+        let value = b"value";
+        let mut buf = BytesMut::new();
+        buf.put_u8(OP_SET);
+        buf.put_u32_le(key.len() as u32);
+        buf.put_u32_le(value.len() as u32);
+        buf.put_u64_le(0);
+        buf.extend_from_slice(key.as_bytes());
+        buf.extend_from_slice(value);
+
+        let cmd = decode_command(&buf).expect("decode set");
+        assert!(matches!(
+            cmd,
+            CacheCommand::Set {
+                key: k,
+                value: v,
+                ttl_secs: None,
+            } if k == key && v == value
+        ));
+    }
+
+    #[test]
+    fn decode_command_set_ok_with_ttl() {
+        let key = "k2";
+        let value = b"payload";
+        let ttl = 42_u64;
+        let mut buf = BytesMut::new();
+        buf.put_u8(OP_SET);
+        buf.put_u32_le(key.len() as u32);
+        buf.put_u32_le(value.len() as u32);
+        buf.put_u64_le(ttl);
+        buf.extend_from_slice(key.as_bytes());
+        buf.extend_from_slice(value);
+
+        let cmd = decode_command(&buf).expect("decode set ttl");
+        assert!(matches!(
+            cmd,
+            CacheCommand::Set {
+                key: k,
+                value: v,
+                ttl_secs: Some(t),
+            } if k == key && v == value && t == ttl
+        ));
+    }
+
+    #[test]
+    fn decode_command_empty_buf() {
+        let err = decode_command(&[]).expect_err("empty buf should error");
+        assert_eq!(err, "Buf is empty");
+    }
+
+    #[test]
+    fn decode_command_bad_key_len() {
+        let mut buf = BytesMut::new();
+        buf.put_u8(OP_GET);
+        buf.put_u32_le(10);
+        buf.extend_from_slice(b"abc");
+
+        let err = decode_command(&buf).expect_err("bad key_len should error");
+        assert_eq!(err, "Bad key_len");
+    }
+
+    #[test]
+    fn decode_command_bad_lengths() {
+        let mut buf = BytesMut::new();
+        buf.put_u8(OP_SET);
+        buf.put_u32_le(1);
+        buf.put_u32_le(5);
+        buf.put_u64_le(0);
+        buf.extend_from_slice(b"k");
+        buf.extend_from_slice(b"v");
+
+        let err = decode_command(&buf).expect_err("bad lengths should error");
+        assert_eq!(err, "Bad lenghts");
+    }
+
+    #[test]
+    fn decode_command_unknown_op() {
+        let buf = [0xFF];
+        let err = decode_command(&buf).expect_err("unknown op should error");
+        assert_eq!(err, "Unknown op");
+    }
+
+    #[test]
+    fn encode_response_ok() {
+        let out = encode_response(CacheResponce::Ok);
+        assert_eq!(out.as_ref(), &[RES_OK]);
+    }
+
+    #[test]
+    fn encode_response_miss() {
+        let out = encode_response(CacheResponce::Miss);
+        assert_eq!(out.as_ref(), &[RES_MISS]);
+    }
+
+    #[test]
+    fn encode_response_hit() {
+        let val = b"data".to_vec();
+        let out = encode_response(CacheResponce::Hit(val.clone()));
+
+        let mut expected = BytesMut::new();
+        expected.put_u8(RES_HIT);
+        expected.put_u32_le(val.len() as u32);
+        expected.extend_from_slice(&val);
+
+        assert_eq!(out.as_ref(), expected.as_ref());
+    }
+
+    #[test]
+    fn encode_response_error() {
+        let msg = "oops";
+        let out = encode_response(CacheResponce::Error(msg.into()));
+
+        let mut expected = BytesMut::new();
+        expected.put_u8(RES_ERR);
+        expected.put_u32_le(msg.len() as u32);
+        expected.extend_from_slice(msg.as_bytes());
+
+        assert_eq!(out.as_ref(), expected.as_ref());
+    }
+}
