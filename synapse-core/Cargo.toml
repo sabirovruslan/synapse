@@ -8,4 +8,9 @@ serde = { version = "1.0.228", features = ["derive"] }
 moka = { version = "0.12.12", features = ["future"] }
 
 [dev-dependencies]
+criterion = { version = "0.8.1", features = ["async_tokio"] }
 tokio = { version = "1.49.0", features = ["macros", "rt", "time"] }
+
+[[bench]]
+name = "l1cache_bench"
+harness = false
