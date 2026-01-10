@@ -5,7 +5,7 @@ use tokio_util::sync::CancellationToken;
 pub mod server;
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let l1_cache = L1Cache::new(10_000);
     let shutdown = CancellationToken::new();
     let uds_handle = run_uds(l1_cache.clone(), shutdown.clone());

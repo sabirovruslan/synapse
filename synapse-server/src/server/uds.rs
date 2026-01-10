@@ -11,6 +11,7 @@ use synapse_core::{
     CacheCommand, CacheResponce, L1Cache, MAX_FRAME_LENGTH, OP_GET, OP_SET, RES_ERR, RES_HIT,
     RES_MISS, RES_OK,
 };
+use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::UnixListener;
 use tokio_util::{
     codec::{Framed, LengthDelimitedCodec},
@@ -73,7 +74,43 @@ fn encode_response(response: CacheResponce) -> Bytes {
     out.freeze()
 }
 
-pub async fn run_uds(l1_cache: L1Cache, shutdown: CancellationToken) -> Result<(), Box<dyn Error>> {
+async fn handle_uds_stream<S>(stream: S, l1_cache: L1Cache)
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+{
+    let mut framed = Framed::new(
+        stream,
+        LengthDelimitedCodec::builder()
+            .max_frame_length(MAX_FRAME_LENGTH)
+            .new_codec(),
+    );
+
+    while let Some(Ok(packet)) = framed.next().await {
+        if let Ok(cmd) = decode_command(&packet) {
+            let response = match cmd {
+                CacheCommand::Get { key } => l1_cache.get(&key).await,
+                CacheCommand::Set {
+                    key,
+                    value,
+                    ttl_secs,
+                } => {
+                    l1_cache.set(key, value, ttl_secs).await;
+                    CacheResponce::Ok
+                }
+            };
+
+            let _ = framed.send(encode_response(response)).await;
+        } else {
+            let response = CacheResponce::Error("Not implemented".into());
+            let _ = framed.send(encode_response(response)).await;
+        }
+    }
+}
+
+pub async fn run_uds(
+    l1_cache: L1Cache,
+    shutdown: CancellationToken,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
     let socket_path =
         env::var("SYNAPSE_SOCKET_PATH").unwrap_or_else(|_| "/tmp/synapse.sock".to_string());
     if let Some(parent) = Path::new(&socket_path).parent() {
@@ -98,33 +135,7 @@ pub async fn run_uds(l1_cache: L1Cache, shutdown: CancellationToken) -> Result<(
                 let l1_cache_clone = l1_cache.clone();
 
                 tokio::spawn(async move {
-                    let mut framed = Framed::new(
-                        stream,
-                        LengthDelimitedCodec::builder()
-                            .max_frame_length(MAX_FRAME_LENGTH)
-                            .new_codec(),
-                    );
-
-                    while let Some(Ok(packet)) = framed.next().await {
-                        if let Ok(cmd) = decode_command(&packet) {
-                            let response = match cmd {
-                                CacheCommand::Get { key } => l1_cache_clone.get(&key).await,
-                                CacheCommand::Set {
-                                    key,
-                                    value,
-                                    ttl_secs,
-                                } => {
-                                    l1_cache_clone.set(key, value, ttl_secs).await;
-                                    CacheResponce::Ok
-                                }
-                            };
-
-                            let _ = framed.send(encode_response(response)).await;
-                        } else {
-                            let response = CacheResponce::Error("Not implemented".into());
-                            let _ = framed.send(encode_response(response)).await;
-                        }
-                    }
+                    handle_uds_stream(stream, l1_cache_clone).await;
                 });
             }
         }
@@ -135,11 +146,14 @@ pub async fn run_uds(l1_cache: L1Cache, shutdown: CancellationToken) -> Result<(
 
 #[cfg(test)]
 mod tests {
-    use super::{decode_command, encode_response};
-    use bytes::{BufMut, BytesMut};
+    use super::{decode_command, encode_response, handle_uds_stream};
+    use bytes::{Buf, BufMut, BytesMut};
+    use futures::{SinkExt, StreamExt};
     use synapse_core::{
-        CacheCommand, CacheResponce, OP_GET, OP_SET, RES_ERR, RES_HIT, RES_MISS, RES_OK,
+        CacheCommand, CacheResponce, L1Cache, OP_GET, OP_SET, RES_ERR, RES_HIT, RES_MISS, RES_OK,
     };
+    use tokio::io::duplex;
+    use tokio_util::codec::{Framed, LengthDelimitedCodec};
 
     #[test]
     fn decode_command_get_ok() {
@@ -286,5 +300,29 @@ mod tests {
         expected.extend_from_slice(msg.as_bytes());
 
         assert_eq!(out.as_ref(), expected.as_ref());
+    }
+
+    #[tokio::test]
+    async fn handle_uds_stream_decode_error_sends_error() {
+        let cache = L1Cache::new(10);
+        let (client, server) = duplex(1024);
+
+        tokio::spawn(handle_uds_stream(server, cache));
+
+        let mut framed = Framed::new(
+            client,
+            LengthDelimitedCodec::builder()
+                .max_frame_length(1024)
+                .new_codec(),
+        );
+
+        framed.send(BytesMut::from(&[0xFF][..]).freeze()).await.unwrap();
+        let response = framed.next().await.unwrap().unwrap();
+
+        let mut buf = &response[..];
+        assert_eq!(buf.get_u8(), RES_ERR);
+        let msg_len = buf.get_u32_le() as usize;
+        let msg = std::str::from_utf8(&buf[..msg_len]).unwrap();
+        assert_eq!(msg, "Not implemented");
     }
 }
