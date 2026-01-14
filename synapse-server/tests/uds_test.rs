@@ -62,6 +62,7 @@ async fn run_uds_set_get_roundtrip() {
     let mut server_task = tokio::spawn(synapse_server::server::uds::run_uds(
         cache,
         shutdown.clone(),
+        None,
     ));
 
     let mut framed = None;

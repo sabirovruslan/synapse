@@ -18,6 +18,8 @@ use tokio_util::{
     sync::CancellationToken,
 };
 
+use crate::redis::client::RedisSync;
+
 pub fn decode_command(mut buf: &[u8]) -> Result<CacheCommand, String> {
     if !buf.has_remaining() {
         return Err("Buf is empty".into());
@@ -74,7 +76,7 @@ pub fn encode_response(response: CacheResponce) -> Bytes {
     out.freeze()
 }
 
-async fn handle_uds_stream<S>(stream: S, l1_cache: L1Cache)
+async fn handle_uds_stream<S>(stream: S, l1_cache: L1Cache, redis_sync: Option<RedisSync>)
 where
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 {
@@ -94,7 +96,14 @@ where
                     value,
                     ttl_secs,
                 } => {
-                    l1_cache.set(key, value, ttl_secs).await;
+                    if let Some(redis_sync) = redis_sync.as_ref() {
+                        l1_cache.set(key.clone(), value.clone(), ttl_secs).await;
+                        if let Err(err) = redis_sync.set(&key, &value, ttl_secs).await {
+                            eprintln!("Redis write failed: {}", err);
+                        }
+                    } else {
+                        l1_cache.set(key, value, ttl_secs).await;
+                    }
                     CacheResponce::Ok
                 }
             };
@@ -110,6 +119,7 @@ where
 pub async fn run_uds(
     l1_cache: L1Cache,
     shutdown: CancellationToken,
+    redis_sync: Option<RedisSync>,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     let socket_path =
         env::var("SYNAPSE_SOCKET_PATH").unwrap_or_else(|_| "/tmp/synapse.sock".to_string());
@@ -133,9 +143,10 @@ pub async fn run_uds(
             accept_res = listener.accept() => {
                 let (stream, _) = accept_res?;
                 let l1_cache_clone = l1_cache.clone();
+                let redis_sync_clone = redis_sync.clone();
 
                 tokio::spawn(async move {
-                    handle_uds_stream(stream, l1_cache_clone).await;
+                    handle_uds_stream(stream, l1_cache_clone, redis_sync_clone).await;
                 });
             }
         }
@@ -307,7 +318,7 @@ mod tests {
         let cache = L1Cache::new(10);
         let (client, server) = duplex(1024);
 
-        tokio::spawn(handle_uds_stream(server, cache));
+        tokio::spawn(handle_uds_stream(server, cache, None));
 
         let mut framed = Framed::new(
             client,
@@ -316,7 +327,10 @@ mod tests {
                 .new_codec(),
         );
 
-        framed.send(BytesMut::from(&[0xFF][..]).freeze()).await.unwrap();
+        framed
+            .send(BytesMut::from(&[0xFF][..]).freeze())
+            .await
+            .unwrap();
         let response = framed.next().await.unwrap().unwrap();
 
         let mut buf = &response[..];
