@@ -10,11 +10,33 @@ services:
       retries: 5
     networks:
       - local_net
+      - remote_net
     volumes:
       - shared-sockets:/tmp
     environment:
-      - REDIS_URL=redis://redis:6379
-      - BIG_JSON_PATH=/app/big_payload.json
+      - SYNAPSE_REDIS_URL=redis://redis:6379
+      - SYNAPSE_REDIS_PREFIX="synapse:cache:"
+      - SYNAPSE_REDIS_CHANNEL="synapse:cache_updates"
+
+  synapse2:
+    build:
+      context: ../../.
+      dockerfile: Dockerfile.synapse
+    healthcheck:
+      test: ["CMD", "test", "-S", "/tmp/synapse2.sock"]
+      interval: 2s
+      timeout: 1s
+      retries: 5
+    networks:
+      - local_net
+      - remote_net
+    volumes:
+      - shared-sockets:/tmp
+    environment:
+      - SYNAPSE_SOCKET_PATH=/tmp/synapse2.sock
+      - SYNAPSE_REDIS_URL=redis://redis:6379
+      - SYNAPSE_REDIS_PREFIX="synapse:cache:"
+      - SYNAPSE_REDIS_CHANNEL="synapse:cache_updates"
 
   web:
     build:
@@ -33,6 +55,7 @@ services:
       - REDIS_URL=redis://redis:6379
     depends_on:
       - synapse
+      - synapse2
 
   redis:
     image: redis:7-alpine
