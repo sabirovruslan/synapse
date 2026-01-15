@@ -4,5 +4,6 @@ resolver = "2"
 members = [
   "synapse-core",
   "synapse-server",
-  "synapse-py",
+  "synapse-py", 
+  "synapse-embedded-py",
 ]
