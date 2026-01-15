@@ -4,6 +4,8 @@ from fastapi import Response
 
 from cachetools import LRUCache
 import redis.asyncio as redis
+import synapse_embedded_py
+import synapse_embedded_async_py
 import synapse_py
 from fastapi import FastAPI
 
@@ -21,6 +23,8 @@ client = None
 client2 = None
 redis_client = None
 memory_cache = None
+embedded_client = None
+embedded_async_client = None
 
 
 def load_big_json() -> str:
@@ -33,7 +37,7 @@ def load_big_json() -> str:
 
 @app.on_event("startup")
 def startup_event():
-    global client, client2, memory_cache
+    global client, client2, memory_cache, embedded_client
     global redis_client
     if os.path.exists(SOCKET_PATH):
         client = synapse_py.SynapseClient(SOCKET_PATH)
@@ -41,6 +45,8 @@ def startup_event():
         client2 = synapse_py.SynapseClient(SOCKET_PATH_2)
     redis_client = redis.from_url(REDIS_URL, decode_responses=True)
     memory_cache = LRUCache(maxsize=10_000)
+    embedded_client = synapse_embedded_py.SynapseEmbedded(10_000)
+    embedded_async_client = synapse_embedded_async_py.SynapseEmbedded(10_000)
 
 
 @app.on_event("shutdown")
@@ -140,6 +146,52 @@ async def get_memory_data(key: str):
         f"[timing] memory get miss {duration_ms:.2f}ms (load {load_ms:.2f}ms) key={key}"
     )
     return {"key": key, "source": "Set Memory"}
+
+
+@app.get("/synapse-embedded/{key}")
+async def get_data_from_synapse_embedded_py(key: str):
+    if embedded_client is None:
+        return {"error": "Synapse embedded cache not initialized"}
+
+    start = time.perf_counter()
+    data = embedded_client.get(key)
+    if data:
+        duration_ms = (time.perf_counter() - start) * 1000
+        print(f"[timing] embedded get hit {duration_ms:.2f}ms key={key}")
+        return Response(content=data, media_type="application/json")
+
+    load_start = time.perf_counter()
+    value = load_big_json()
+    load_ms = (time.perf_counter() - load_start) * 1000
+    embedded_client.set(key, value.encode(), None)
+    duration_ms = (time.perf_counter() - start) * 1000
+    print(
+        f"[timing] embedded get miss {duration_ms:.2f}ms (load {load_ms:.2f}ms) key={key}"
+    )
+    return {"key": key, "source": "Set embedded"}
+
+
+@app.get("/synapse-embedded-async/{key}")
+async def get_data_from_synapse_embedded_py(key: str):
+    if embedded_client is None:
+        return {"error": "Synapse embedded async cache not initialized"}
+
+    start = time.perf_counter()
+    data = await embedded_async_client.get(key)
+    if data:
+        duration_ms = (time.perf_counter() - start) * 1000
+        print(f"[timing] embedded async get hit {duration_ms:.2f}ms key={key}")
+        return Response(content=data, media_type="application/json")
+
+    load_start = time.perf_counter()
+    value = load_big_json()
+    load_ms = (time.perf_counter() - load_start) * 1000
+    await embedded_async_client.set(key, value.encode(), None)
+    duration_ms = (time.perf_counter() - start) * 1000
+    print(
+        f"[timing] embedded async get miss {duration_ms:.2f}ms (load {load_ms:.2f}ms) key={key}"
+    )
+    return {"key": key, "source": "Set embedded async"}
 
 
 @app.get("/.well-known/appspecific/com.chrome.devtools.json")

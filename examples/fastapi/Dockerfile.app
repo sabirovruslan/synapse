@@ -15,10 +15,16 @@ COPY synapse-embedded-py /synapse-embedded-py
 WORKDIR /synapse-embedded-py
 RUN pip install maturin && maturin build --release
 
+COPY synapse-core /synapse-core
+COPY synapse-embedded-async-py /synapse-embedded-async-py
+WORKDIR /synapse-embedded-async-py
+RUN pip install maturin && maturin build --release
+
 FROM python:3.13-slim
 WORKDIR /app
 COPY --from=builder /synapse-py/target/wheels/*.whl .
 COPY --from=builder /synapse-embedded-py/target/wheels/*.whl .
+COPY --from=builder /synapse-embedded-async-py/target/wheels/*.whl .
 RUN pip install *.whl && pip install fastapi uvicorn redis cachetools
 
 COPY examples/fastapi/main.py .
