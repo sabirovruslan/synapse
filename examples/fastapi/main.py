@@ -38,7 +38,7 @@ def load_big_json() -> str:
 @app.on_event("startup")
 def startup_event():
     global client, client2, memory_cache, embedded_client
-    global redis_client
+    global redis_client, embedded_async_client
     if os.path.exists(SOCKET_PATH):
         client = synapse_py.SynapseClient(SOCKET_PATH)
     if os.path.exists(SOCKET_PATH_2):
@@ -173,7 +173,7 @@ async def get_data_from_synapse_embedded_py(key: str):
 
 @app.get("/synapse-embedded-async/{key}")
 async def get_data_from_synapse_embedded_py(key: str):
-    if embedded_client is None:
+    if embedded_async_client is None:
         return {"error": "Synapse embedded async cache not initialized"}
 
     start = time.perf_counter()

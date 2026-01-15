@@ -39,7 +39,7 @@ impl SynapseEmbedded {
 }
 
 #[pymodule]
-fn synapse_embedded_py(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
+fn synapse_embedded_async_py(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<SynapseEmbedded>()?;
     Ok(())
 }
