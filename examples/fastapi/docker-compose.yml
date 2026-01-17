@@ -50,7 +50,7 @@ services:
     volumes:
       - shared-sockets:/tmp
       - ./main.py:/app/main.py
-      - ./big_payload.json:/app/big_payload.json:ro
+      - ../data/big_payload.json:/app/big_payload.json:ro
     environment:
       - REDIS_URL=redis://redis:6379
     depends_on:

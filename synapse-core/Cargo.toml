@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 serde = { version = "1.0.228", features = ["derive"] }
 moka = { version = "0.12.12", features = ["future"] }
+bytes = "1.11.0"
 
 [dev-dependencies]
 criterion = { version = "0.8.1", features = ["async_tokio"] }

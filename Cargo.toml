@@ -7,4 +7,6 @@ members = [
   "synapse-py", 
   "synapse-embedded-py", 
   "synapse-embedded-async-py",
+  "examples/axum", 
+  "synapse-rust",
 ]
