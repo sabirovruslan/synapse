@@ -1,0 +1,51 @@
+services:
+  synapse:
+    build:
+      context: ../../.
+      dockerfile: Dockerfile.synapse
+    healthcheck:
+      test: ["CMD", "test", "-S", "/tmp/synapse.sock"]
+      interval: 2s
+      timeout: 1s
+      retries: 5
+    networks:
+      - local_net
+      - remote_net
+    volumes:
+      - shared-sockets:/tmp
+    environment:
+      - SYNAPSE_REDIS_URL=redis://redis:6379
+      - SYNAPSE_REDIS_PREFIX="synapse:cache:"
+      - SYNAPSE_REDIS_CHANNEL="synapse:cache_updates"
+
+  axum:
+    build:
+      context: ../../.
+      dockerfile: examples/axum/Dockerfile.app
+    ports:
+      - "8080:8080"
+    networks:
+      - local_net
+    volumes:
+      - shared-sockets:/tmp
+      - ../data/big_payload.json:/app/big_payload.json:ro
+    environment:
+      - SYNAPSE_SOCKET_PATH=/tmp/synapse.sock
+      - BIG_JSON_PATH=/app/big_payload.json
+    depends_on:
+      - synapse
+
+  redis:
+    image: redis:7-alpine
+    networks:
+      - remote_net
+
+
+volumes:
+  shared-sockets:
+
+networks:
+  local_net:
+    driver: bridge
+  remote_net:
+    driver: bridge
